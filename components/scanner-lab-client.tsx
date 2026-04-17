@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { BrowserMultiFormatReader } from "@zxing/browser";
+import { BarcodeFormat, DecodeHintType, NotFoundException } from "@zxing/library";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ScannerInput } from "@/components/scanner-input";
 import {
@@ -72,7 +74,17 @@ export function ScannerLabClient() {
   const [lookup, setLookup] = useState<LookupResponse | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraBooting, setCameraBooting] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraSupported, setCameraSupported] = useState(false);
+  const [videoDevices, setVideoDevices] = useState<Array<{ id: string; label: string }>>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsRef = useRef<{ stop: () => void } | null>(null);
+  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const pendingCodeRef = useRef<string | null>(null);
 
   useEffect(() => {
     getMetrics()
@@ -80,6 +92,27 @@ export function ScannerLabClient() {
       .catch((err) => setError(err instanceof Error ? err.message : "No se pudieron cargar los datos."))
       .finally(() => setLoadingMetrics(false));
   }, []);
+
+  useEffect(() => {
+    setCameraSupported(
+      typeof window !== "undefined" &&
+        typeof navigator !== "undefined" &&
+        Boolean(navigator.mediaDevices?.getUserMedia)
+    );
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      controlsRef.current?.stop();
+      controlsRef.current = null;
+      readerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cameraActive || !selectedDeviceId || cameraBooting) return;
+    void startCamera();
+  }, [selectedDeviceId]);
 
   const headline = useMemo(() => {
     if (!lookup) return "Escanea un producto y mide la cobertura real de tu catálogo abierto.";
@@ -117,6 +150,108 @@ export function ScannerLabClient() {
       setError(err instanceof Error ? err.message : "No se pudo consultar el código.");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function loadDevices() {
+    const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+    const nextDevices = devices.map((device) => ({
+      id: device.deviceId,
+      label: device.label || `Cámara ${device.deviceId.slice(0, 4)}`
+    }));
+
+    setVideoDevices(nextDevices);
+    if (!selectedDeviceId && nextDevices.length > 0) {
+      const preferred =
+        nextDevices.find((device) => /back|rear|environment|trasera/i.test(device.label)) ??
+        nextDevices[nextDevices.length - 1];
+      setSelectedDeviceId(preferred.id);
+      return preferred.id;
+    }
+
+    return selectedDeviceId ?? nextDevices[0]?.id;
+  }
+
+  async function stopCamera() {
+    controlsRef.current?.stop();
+    controlsRef.current = null;
+    readerRef.current = null;
+    pendingCodeRef.current = null;
+    setCameraActive(false);
+    setCameraBooting(false);
+  }
+
+  async function startCamera() {
+    if (!cameraSupported || !videoRef.current) {
+      setCameraError("Este navegador no soporta acceso a cámara.");
+      return;
+    }
+
+    await stopCamera();
+    setCameraBooting(true);
+    setCameraError(null);
+    setError(null);
+
+    try {
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.ITF
+      ]);
+
+      const reader = new BrowserMultiFormatReader(hints, {
+        delayBetweenScanAttempts: 200,
+        delayBetweenScanSuccess: 1000
+      });
+      readerRef.current = reader;
+
+      const fallbackStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
+      });
+      fallbackStream.getTracks().forEach((track) => track.stop());
+
+      const preferredDeviceId = await loadDevices();
+      const constraints: MediaStreamConstraints = {
+        video: preferredDeviceId
+          ? { deviceId: { exact: preferredDeviceId } }
+          : { facingMode: { ideal: "environment" } },
+        audio: false
+      };
+
+      controlsRef.current = await reader.decodeFromConstraints(
+        constraints,
+        videoRef.current,
+        (result, decodeError) => {
+          if (result) {
+            const code = result.getText().trim();
+            if (!code || pendingCodeRef.current === code || scanning) return;
+            pendingCodeRef.current = code;
+            setScanValue(code);
+            void stopCamera().then(() => handleScan(code));
+            return;
+          }
+
+          if (decodeError && !(decodeError instanceof NotFoundException)) {
+            setCameraError("La cámara abrió, pero hubo un error leyendo el código.");
+          }
+        }
+      );
+
+      setCameraActive(true);
+    } catch (err) {
+      setCameraError(
+        err instanceof Error
+          ? `No se pudo activar la cámara: ${err.message}`
+          : "No se pudo activar la cámara."
+      );
+      await stopCamera();
+    } finally {
+      setCameraBooting(false);
     }
   }
 
@@ -176,6 +311,57 @@ export function ScannerLabClient() {
                 placeholder="Escanea o escribe un EAN / UPC y presiona Enter"
               />
 
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  onClick={() => void (cameraActive ? stopCamera() : startCamera())}
+                  disabled={cameraBooting || scanning || !cameraSupported}
+                  className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  {cameraBooting
+                    ? "Abriendo cámara..."
+                    : cameraActive
+                      ? "Detener cámara"
+                      : "Activar cámara"}
+                </button>
+
+                {videoDevices.length > 1 && (
+                  <select
+                    value={selectedDeviceId ?? ""}
+                    onChange={(event) => setSelectedDeviceId(event.target.value)}
+                    className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 outline-none"
+                  >
+                    {videoDevices.map((device) => (
+                      <option key={device.id} value={device.id}>
+                        {device.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-950">
+                {cameraActive ? (
+                  <video
+                    ref={videoRef}
+                    className="aspect-video w-full object-cover"
+                    muted
+                    playsInline
+                    autoPlay
+                  />
+                ) : (
+                  <div className="grid aspect-video place-items-center bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_75%)] p-6 text-center text-slate-300">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                        Cámara del scanner
+                      </p>
+                      <p className="mt-3 max-w-sm text-sm leading-6">
+                        Activa la cámara para leer el código directamente desde el teléfono o una laptop con webcam.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500">
                 <span className="rounded-full bg-slate-100 px-3 py-1">Open Food Facts</span>
                 <span className="rounded-full bg-slate-100 px-3 py-1">Open Beauty Facts</span>
@@ -186,6 +372,12 @@ export function ScannerLabClient() {
               {error && (
                 <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
                   {error}
+                </p>
+              )}
+
+              {cameraError && (
+                <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+                  {cameraError}
                 </p>
               )}
 

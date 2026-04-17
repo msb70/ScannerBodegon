@@ -40,7 +40,6 @@ npm install
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 3. Ejecuta `supabase/schema.sql` en el SQL Editor de Supabase.
@@ -62,12 +61,14 @@ Qué hace:
 - Devuelve nombre, marca, descripción, categoría y foto cuando la fuente la ofrece.
 - Registra todos los escaneos encontrados y no encontrados en `scanner_lab_scans`.
 - Muestra un dashboard con efectividad total, cobertura por fuente, bitácora reciente y códigos fallidos frecuentes.
+- Permite escaneo por cámara usando `ZXing` además de entrada manual.
 
 Notas operativas:
 
-- Si falta `SUPABASE_SERVICE_ROLE_KEY`, el módulo sigue consultando catálogos, pero entra en modo demo sin persistencia.
-- La persistencia se hace server-side desde rutas API; la tabla `scanner_lab_scans` queda con RLS activado y sin acceso público directo.
+- La persistencia usa la `anon key` desde rutas API server-side y políticas RLS específicas para `scanner_lab_scans`.
+- Para que grabe y lea métricas, debes aplicar la parte nueva de `supabase/schema.sql` en tu proyecto Supabase.
 - Está pensado para compartir la URL con alguien del bodegón sin exigir login.
+- La cámara funciona mejor en HTTPS o en `localhost`; en producción Vercel esto ya se cumple.
 
 ## Seguridad y multi-tenant
 
@@ -78,7 +79,7 @@ El cobro usa la función SQL `registrar_venta(p_user_id, p_items)` para validar 
 ## Deploy en Vercel
 
 1. Conecta el repositorio a Vercel.
-2. Configura `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`.
+2. Configura `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 3. Asegúrate de haber aplicado `supabase/schema.sql` en Supabase.
 4. Deploy con el comando por defecto de Vercel para Next.js.
 

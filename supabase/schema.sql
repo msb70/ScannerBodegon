@@ -192,6 +192,23 @@ alter table public.ventas enable row level security;
 alter table public.ventas_items enable row level security;
 alter table public.scanner_lab_scans enable row level security;
 
+drop policy if exists "scanner_lab_scans_insert_public" on public.scanner_lab_scans;
+create policy "scanner_lab_scans_insert_public"
+on public.scanner_lab_scans
+for insert
+to anon, authenticated
+with check (
+  normalized_code ~ '^[0-9]{8,}$'
+  and status in ('found', 'not_found', 'error')
+);
+
+drop policy if exists "scanner_lab_scans_select_public" on public.scanner_lab_scans;
+create policy "scanner_lab_scans_select_public"
+on public.scanner_lab_scans
+for select
+to anon, authenticated
+using (true);
+
 drop policy if exists "productos_select_own" on public.productos;
 create policy "productos_select_own"
 on public.productos

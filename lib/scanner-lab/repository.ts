@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, isSupabaseAdminConfigured } from "@/lib/supabase-admin";
+import { getSupabaseServerClient, isSupabaseServerConfigured } from "@/lib/supabase-server";
 
 import {
   SCANNER_SOURCE_LABELS,
@@ -43,10 +44,16 @@ function emptyMetrics(): ScannerLabMetrics {
   };
 }
 
-export async function persistScannerLookup(rawCode: string, lookup: ScannerLookupOutput) {
-  if (!isSupabaseAdminConfigured()) return null;
+function getScannerLabClient() {
+  if (isSupabaseAdminConfigured()) return getSupabaseAdmin();
+  if (isSupabaseServerConfigured()) return getSupabaseServerClient();
+  return null;
+}
 
-  const supabase = getSupabaseAdmin();
+export async function persistScannerLookup(rawCode: string, lookup: ScannerLookupOutput) {
+  const supabase = getScannerLabClient();
+  if (!supabase) return null;
+
   const payload = {
     raw_code: rawCode,
     normalized_code: lookup.codigo,
@@ -72,9 +79,9 @@ export async function persistScannerLookup(rawCode: string, lookup: ScannerLooku
 }
 
 export async function getScannerMetrics(): Promise<ScannerLabMetrics> {
-  if (!isSupabaseAdminConfigured()) return emptyMetrics();
+  const supabase = getScannerLabClient();
+  if (!supabase) return emptyMetrics();
 
-  const supabase = getSupabaseAdmin();
   const [totalResult, foundResult, notFoundResult, errorResult, recentResult, summaryResult] =
     await Promise.all([
       supabase.from("scanner_lab_scans").select("*", { count: "exact", head: true }),
