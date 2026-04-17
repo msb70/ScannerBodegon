@@ -1,0 +1,20 @@
+export function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+
+  if (error && typeof error === "object") {
+    const maybeError = error as {
+      message?: unknown;
+      details?: unknown;
+      hint?: unknown;
+      code?: unknown;
+    };
+
+    const parts = [maybeError.message, maybeError.details, maybeError.hint, maybeError.code]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .map((part) => part.trim());
+
+    if (parts.length > 0) return parts.join(" ");
+  }
+
+  return fallback;
+}

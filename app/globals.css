@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f7f8fb;
+  color: #121826;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.scan-ring {
+  box-shadow: 0 0 0 4px rgb(20 184 166 / 12%);
+}
