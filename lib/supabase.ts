@@ -4,6 +4,23 @@ import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const fallbackSupabaseUrl = "https://placeholder.supabase.co";
+const fallbackSupabaseAnonKey = "placeholder-anon-key";
+
+function getSafeSupabaseUrl(value: string | undefined) {
+  if (!value) return fallbackSupabaseUrl;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return fallbackSupabaseUrl;
+    }
+
+    return value;
+  } catch {
+    return fallbackSupabaseUrl;
+  }
+}
 
 export function isSupabaseConfigured() {
   return Boolean(
@@ -23,8 +40,8 @@ export function assertSupabaseConfigured() {
 }
 
 export const supabase = createClient(
-  supabaseUrl ?? "https://placeholder.supabase.co",
-  supabaseAnonKey ?? "placeholder-anon-key",
+  getSafeSupabaseUrl(supabaseUrl),
+  supabaseAnonKey || fallbackSupabaseAnonKey,
   {
     auth: {
       persistSession: true,
