@@ -2,13 +2,16 @@ import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { getNormalizedEnvValue, isValidSupabaseUrl } from "@/lib/supabase-config";
+
+const supabaseUrl = getNormalizedEnvValue(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = getNormalizedEnvValue(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export function isSupabaseServerConfigured() {
   return Boolean(
     supabaseUrl &&
       supabaseAnonKey &&
+      isValidSupabaseUrl(supabaseUrl) &&
       !supabaseUrl.includes("your-project") &&
       !supabaseAnonKey.includes("your-public-anon-key")
   );

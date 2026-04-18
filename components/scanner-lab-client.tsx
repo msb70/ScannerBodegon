@@ -19,6 +19,40 @@ type LookupResponse = {
   persistenceError: string | null;
 };
 
+function hasCameraAccess() {
+  return (
+    typeof window !== "undefined" &&
+    typeof navigator !== "undefined" &&
+    typeof navigator.mediaDevices !== "undefined" &&
+    typeof navigator.mediaDevices.getUserMedia === "function"
+  );
+}
+
+function explainCameraError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "No se pudo activar la cámara.";
+  }
+
+  switch (error.name) {
+    case "NotAllowedError":
+    case "PermissionDeniedError":
+      return "El navegador bloqueó el permiso de cámara. Debes permitir acceso a la cámara.";
+    case "NotFoundError":
+    case "DevicesNotFoundError":
+      return "No se detectó ninguna cámara disponible en este equipo.";
+    case "NotReadableError":
+    case "TrackStartError":
+      return "La cámara existe, pero está ocupada por otra aplicación o pestaña.";
+    case "OverconstrainedError":
+    case "ConstraintNotSatisfiedError":
+      return "La cámara seleccionada no pudo abrirse con esas restricciones. Prueba otra cámara.";
+    case "SecurityError":
+      return "La cámara requiere un contexto seguro. Usa HTTPS o localhost.";
+    default:
+      return `No se pudo activar la cámara: ${error.message}`;
+  }
+}
+
 function emptyMetrics(): ScannerLabMetrics {
   return {
     configured: false,
@@ -77,7 +111,7 @@ export function ScannerLabClient() {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraBooting, setCameraBooting] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [cameraSupported, setCameraSupported] = useState(false);
+  const [cameraSupported, setCameraSupported] = useState<boolean | null>(null);
   const [videoDevices, setVideoDevices] = useState<Array<{ id: string; label: string }>>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,11 +128,7 @@ export function ScannerLabClient() {
   }, []);
 
   useEffect(() => {
-    setCameraSupported(
-      typeof window !== "undefined" &&
-        typeof navigator !== "undefined" &&
-        Boolean(navigator.mediaDevices?.getUserMedia)
-    );
+    setCameraSupported(hasCameraAccess());
   }, []);
 
   useEffect(() => {
@@ -182,8 +212,15 @@ export function ScannerLabClient() {
   }
 
   async function startCamera() {
-    if (!cameraSupported) {
-      setCameraError("Este navegador no soporta acceso a cámara.");
+    const supportsCamera = hasCameraAccess();
+    setCameraSupported(supportsCamera);
+
+    if (!supportsCamera) {
+      setCameraError(
+        window.isSecureContext || window.location.hostname === "localhost"
+          ? "Este navegador no expone la API de cámara."
+          : "La cámara requiere HTTPS o localhost."
+      );
       return;
     }
 
@@ -249,11 +286,7 @@ export function ScannerLabClient() {
 
       setCameraActive(true);
     } catch (err) {
-      setCameraError(
-        err instanceof Error
-          ? `No se pudo activar la cámara: ${err.message}`
-          : "No se pudo activar la cámara."
-      );
+      setCameraError(explainCameraError(err));
       await stopCamera();
     } finally {
       setCameraBooting(false);
@@ -319,7 +352,7 @@ export function ScannerLabClient() {
               <div className="mt-4 flex flex-wrap gap-3">
                 <button
                   onClick={() => void (cameraActive ? stopCamera() : startCamera())}
-                  disabled={cameraBooting || scanning || !cameraSupported}
+                  disabled={cameraBooting || scanning}
                   className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   {cameraBooting
@@ -347,20 +380,23 @@ export function ScannerLabClient() {
               <div className="relative mt-4 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-950">
                 <video
                   ref={videoRef}
-                  className={cameraActive ? "aspect-video w-full object-cover" : "hidden aspect-video w-full object-cover"}
+                  className="aspect-video w-full object-cover"
                   muted
                   playsInline
                   autoPlay
                 />
 
                 {!cameraActive && (
-                  <div className="grid aspect-video place-items-center bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_75%)] p-6 text-center text-slate-300">
+                  <div className="absolute inset-0 grid aspect-video place-items-center bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_75%)] p-6 text-center text-slate-300">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
                         Cámara del scanner
                       </p>
                       <p className="mt-3 max-w-sm text-sm leading-6">
                         Activa la cámara para leer el código directamente desde el teléfono o una laptop con webcam.
+                      </p>
+                      <p className="mt-2 text-xs text-slate-500">
+                        Si el navegador pide permiso, apruébalo. En producción debe abrirse por HTTPS.
                       </p>
                     </div>
                   </div>

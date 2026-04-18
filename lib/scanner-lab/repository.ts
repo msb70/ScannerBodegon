@@ -44,6 +44,33 @@ function emptyMetrics(): ScannerLabMetrics {
   };
 }
 
+function isScannerLabStorageUnavailable(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const maybeError = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+    hint?: string;
+  };
+
+  const text = [maybeError.message, maybeError.details, maybeError.hint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (
+    maybeError.code === "42P01" ||
+    maybeError.code === "PGRST205" ||
+    maybeError.code === "PGRST116" ||
+    text.includes("scanner_lab_scans") ||
+    text.includes("relation") ||
+    text.includes("permission denied") ||
+    text.includes("row-level security") ||
+    text.includes("violates row-level security")
+  );
+}
+
 function getScannerLabClient() {
   if (isSupabaseAdminConfigured()) return getSupabaseAdmin();
   if (isSupabaseServerConfigured()) return getSupabaseServerClient();
@@ -74,7 +101,10 @@ export async function persistScannerLookup(rawCode: string, lookup: ScannerLooku
     .select("*")
     .single<ScannerLabScanRow>();
 
-  if (error) throw error;
+  if (error) {
+    if (isScannerLabStorageUnavailable(error)) return null;
+    throw error;
+  }
   return toRecord(data);
 }
 
@@ -117,12 +147,18 @@ export async function getScannerMetrics(): Promise<ScannerLabMetrics> {
         >()
     ]);
 
-  if (totalResult.error) throw totalResult.error;
-  if (foundResult.error) throw foundResult.error;
-  if (notFoundResult.error) throw notFoundResult.error;
-  if (errorResult.error) throw errorResult.error;
-  if (recentResult.error) throw recentResult.error;
-  if (summaryResult.error) throw summaryResult.error;
+  const firstError =
+    totalResult.error ??
+    foundResult.error ??
+    notFoundResult.error ??
+    errorResult.error ??
+    recentResult.error ??
+    summaryResult.error;
+
+  if (firstError) {
+    if (isScannerLabStorageUnavailable(firstError)) return emptyMetrics();
+    throw firstError;
+  }
 
   const recentRows = recentResult.data ?? [];
   const summaryRows = summaryResult.data ?? [];
