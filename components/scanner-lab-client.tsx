@@ -182,8 +182,13 @@ export function ScannerLabClient() {
   }
 
   async function startCamera() {
-    if (!cameraSupported || !videoRef.current) {
+    if (!cameraSupported) {
       setCameraError("Este navegador no soporta acceso a cámara.");
+      return;
+    }
+
+    if (!videoRef.current) {
+      setCameraError("La vista previa de cámara no está lista todavía.");
       return;
     }
 
@@ -339,16 +344,16 @@ export function ScannerLabClient() {
                 )}
               </div>
 
-              <div className="mt-4 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-950">
-                {cameraActive ? (
-                  <video
-                    ref={videoRef}
-                    className="aspect-video w-full object-cover"
-                    muted
-                    playsInline
-                    autoPlay
-                  />
-                ) : (
+              <div className="relative mt-4 overflow-hidden rounded-[1.75rem] border border-slate-200 bg-slate-950">
+                <video
+                  ref={videoRef}
+                  className={cameraActive ? "aspect-video w-full object-cover" : "hidden aspect-video w-full object-cover"}
+                  muted
+                  playsInline
+                  autoPlay
+                />
+
+                {!cameraActive && (
                   <div className="grid aspect-video place-items-center bg-[radial-gradient(circle_at_top,#1e293b_0%,#020617_75%)] p-6 text-center text-slate-300">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
