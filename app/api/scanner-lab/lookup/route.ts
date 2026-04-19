@@ -6,7 +6,15 @@ import { persistScannerLookup } from "@/lib/scanner-lab/repository";
 export const dynamic = "force-dynamic";
 
 function getPersistenceErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
+  if (error instanceof Error) {
+    const text = error.message.toLowerCase();
+
+    if (text.includes("enotfound") || text.includes("getaddrinfo") || text.includes("fetch failed")) {
+      return "No se pudo conectar con Supabase. Verifica que el proyecto exista y que la URL configurada sea correcta.";
+    }
+
+    return error.message;
+  }
 
   if (error && typeof error === "object") {
     const maybeError = error as {
